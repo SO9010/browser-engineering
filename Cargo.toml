@@ -1,0 +1,18 @@
+[package]
+name = "browser-engineering"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ab_glyph = "0.2.29"
+euclid = "0.22.11"
+flate2 = "1.1.1"
+font-kit = "0.14.3"
+fontdue = "0.9.3"
+pixels = "0.15.0"
+raqote = "0.8.5"
+rustls = "0.23.27"
+socket2 = "0.5.10"
+webpki-roots = "1.0.0"
+winit = "0.29.0"
+winit_input_helper = "0.16.0"

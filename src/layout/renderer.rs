@@ -84,7 +84,7 @@ impl Layout {
     }
 
     // The purpose of this function is to go through and split up the token actions into their prospective lines.
-    fn lines(&mut self) {
+    pub fn lines(&mut self) {
         self.lines = Vec::new();
         let mut x: f32 = 0.0;
         let mut collected_text = Vec::new();
@@ -127,7 +127,6 @@ impl Layout {
                         }
 
                         x += word_width;
-
                         text.push_str(word);
                         collected_text.push(TokenAction::Text(StyledText {
                             text: text.clone(),
@@ -143,7 +142,6 @@ impl Layout {
     }
 
     fn draw_text(&mut self) {
-        self.lines();
         (self.vstep, self.hstep) = self.set_up_cursor();
 
         let mut largest_ystep = 0.0;

@@ -98,6 +98,7 @@ pub fn init_renderer(body: Body) -> Result<(), Error> {
                 pixels.resize_buffer(size.width, size.height).unwrap();
                 pixels.resize_surface(size.width, size.height).unwrap();
                 layout.draw();
+                layout.lines();
             }
 
             // Update internal state and request a redraw

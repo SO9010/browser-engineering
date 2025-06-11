@@ -16,11 +16,15 @@ pub struct LayoutFont {
 impl Default for LayoutFont {
     fn default() -> Self {
         LayoutFont {
-            family: FamilyName::Title("FiraCode Nerd Font".into()),
+            family: font_kit::family_name::FamilyName::Title("FiraCode Nerd Font".into()),
             size: 16.0,
             original_size: 16.0,
-            properties: Properties::new(),
-            align: "left".into(),
+            properties: font_kit::properties::Properties {
+                style: font_kit::properties::Style::Normal,
+                weight: font_kit::properties::Weight::NORMAL,
+                stretch: font_kit::properties::Stretch::NORMAL,
+            },
+            align: "left".to_string(),
         }
     }
 }

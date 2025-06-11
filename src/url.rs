@@ -393,7 +393,6 @@ impl Response {
             }
             if headers_done {
                 body.push_str(line);
-                body.push('\n');
                 continue; // Collect body after headers
             }
             if let Some((key, value)) = line.split_once(':') {
@@ -406,13 +405,10 @@ impl Response {
 
     pub fn display(&self) {
         let _ = init_renderer(self.body.clone());
-        show(&self.body.text().to_string());
     }
 
     pub fn display_source(&self) {
-        let b = self.body.text().to_string();
         let _ = init_renderer(self.body.clone());
-        show(&b.clone());
     }
 
     pub fn get_response_code(&self) -> Option<u16> {

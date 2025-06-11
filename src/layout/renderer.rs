@@ -1,7 +1,13 @@
-use std::char;
+use std::{
+    char,
+    collections::{HashMap, HashSet},
+    fmt::{Debug, Display},
+};
 
 use font_kit::font::Font;
 use raqote::*;
+
+use crate::layout::text::{StyledText, TokenAction};
 
 use super::{
     LayoutFont,
@@ -19,8 +25,19 @@ pub struct Layout {
     pub sx: f32,
     pub sy: f32,
 
+    // So the layout for this will be a new vec for each line.
+    // The f32 is the width of that line
+    lines: Vec<(Vec<TokenAction>, f32)>,
+
+    hstep: f32,
+    vstep: f32,
+
+    font_cache: HashMap<String, Font>,
+
     width: f32,
     height: f32,
+
+    align: String,
 
     pt: f32, // Point size
 }
@@ -28,15 +45,22 @@ pub struct Layout {
 impl Layout {
     /// Create a new text
     pub fn new(width: f32, height: f32, body: Body) -> Self {
-        Self {
+        let mut s: Layout = Self {
             dt: DrawTarget::new(width as i32, height as i32),
             body,
             sx: 0.0,
             sy: 0.0,
+            hstep: 10.0,
+            vstep: 25.0,
+            lines: Vec::new(),
+            font_cache: HashMap::new(),
             width,
             height,
+            align: "center".to_string(),
             pt: 16.0,
-        }
+        };
+        s.lines();
+        return s;
     }
 
     pub fn update_window_scale(&mut self, width: f32, height: f32) {
@@ -52,6 +76,155 @@ impl Layout {
         self.dt.get_data()
     }
 
+    fn get_font(&mut self, font: &LayoutFont) -> Font {
+        let font_key = format!("{:?}", font);
+        if !self.font_cache.contains_key(&font_key) {
+            let fk = font.to_font();
+            self.font_cache.insert(font_key.clone(), fk);
+        }
+        self.font_cache.get(&font_key).unwrap().clone()
+    }
+
+    fn set_up_cursor(&self) -> (f32, f32) {
+        // Set up the cursor position. Note the margins added.
+        (-self.sy + 25.0, -self.sx + 10.0)
+    }
+
+    // The purpose of this function is to go through and split up the token actions into their prospective lines.
+    fn lines(&mut self) {
+        self.lines = Vec::new();
+        let mut x: f32 = 0.0;
+        let mut collected_text = Vec::new();
+
+        let mut font: LayoutFont = LayoutFont::default();
+        let mut text: String = String::new();
+        for (i, token) in self.body.tokens().iter().enumerate() {
+            let mut text_width = 0.0;
+            // Don't need to process if its out of sight... Out of sight out of mind.
+            // We can get the line height and then calculate when its out of sight...
+            match token {
+                super::text::TokenAction::Newline => {
+                    // Finish the current line first
+                    if !collected_text.is_empty() {
+                        self.lines.push((collected_text.clone(), text_width));
+                        collected_text.clear();
+                        text_width = 0.0;
+                    }
+                    // Add an actual newline token to start the next line
+                    self.lines.push((Vec::new(), 0.0));
+                    x = 0.0;
+                }
+                super::text::TokenAction::Text(styled_text) => {
+                    let f = &self.get_font(&font);
+                    text_width += text_pixel_dimensions(f, &styled_text.text, self.pt).0;
+                    for word in styled_text.text.split(" ") {
+                        let word_width = text_pixel_dimensions(f, &word, self.pt).0;
+
+                        if word.contains('\n') {
+                            self.lines.push((collected_text.clone(), text_width));
+                            collected_text.clear();
+                            x = 0.0;
+                            text_width = 0.0;
+                        }
+
+                        if x + word_width > self.width - 20.0 {
+                            self.lines.push((collected_text.clone(), text_width));
+                            collected_text.clear();
+                            x = 0.0;
+                            text_width = 0.0;
+                        }
+
+                        x += word_width;
+
+                        text.push_str(&word);
+                        collected_text.push(TokenAction::Text(StyledText {
+                            text: text.clone(),
+                            font: font.clone(),
+                        }));
+
+                        font = styled_text.font.clone();
+                        text.clear();
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_text(&mut self) {
+        self.lines();
+        (self.vstep, self.hstep) = self.set_up_cursor();
+
+        let mut largest_ystep = 0.0;
+        for (line, _) in self.lines.clone() {
+            if self.vstep < -self.sy + 20.0 {
+                continue;
+            } else if self.vstep > self.height {
+                continue;
+            }
+
+            // Calculate the actual total width of this line
+            let mut total_line_width = 0.0;
+            for ta in &line {
+                if let super::text::TokenAction::Text(styled_text) = ta {
+                    let font = &self.get_font(&styled_text.font);
+                    let d = text_pixel_dimensions(font, &styled_text.text, self.pt);
+                    total_line_width += d.0;
+                }
+            }
+
+            // Calculate centering offset
+            let available_width = self.width - 20.0; // Account for margins
+
+            self.hstep = -self.sx
+                + 10.0
+                + match &self.align {
+                    val if *val == "left".to_owned() => 0.0,
+                    val if *val == "right".to_owned() => available_width - total_line_width,
+                    val if *val == "center".to_owned() => {
+                        (available_width - total_line_width) / 2.0
+                    }
+                    _ => 0.0,
+                };
+
+            for ta in line {
+                match ta {
+                    super::text::TokenAction::Newline => {
+                        self.vstep += largest_ystep * 2.;
+                        // Don't reset hstep here - it's handled per line
+                    }
+                    super::text::TokenAction::Text(styled_text) => {
+                        let font = &self.get_font(&styled_text.font);
+                        let d = text_pixel_dimensions(font, &styled_text.text, self.pt);
+
+                        if largest_ystep < d.1 {
+                            largest_ystep = d.1;
+                        }
+
+                        self.dt.draw_text(
+                            font,
+                            self.pt,
+                            &styled_text.text,
+                            Point::new(self.hstep, self.vstep), // Use calculated hstep
+                            &Source::Solid(SolidSource {
+                                r: 0,
+                                g: 0,
+                                b: 0,
+                                a: 0xff,
+                            }),
+                            &DrawOptions::new(),
+                        );
+
+                        self.hstep += d.0;
+                    }
+                }
+            }
+
+            // Go to the next line
+            self.vstep += largest_ystep;
+            // hstep will be recalculated for the next line
+        }
+    }
+
     /// Draw all of the shapes
     pub fn draw(&mut self) {
         self.dt.clear(SolidSource {
@@ -61,121 +234,19 @@ impl Layout {
             a: 0xff,
         });
 
-        // Sort out in the layout
-        let mut y = -self.sy + 25.0;
-        let mut x = -self.sx + 10.0;
-        let mut glyphs: Vec<u32> = Vec::new();
-        let mut points = Vec::new();
-
-        // Word splitting and drawing
-        let mut font: LayoutFont = LayoutFont::default();
-        let mut font_kit_font = font.to_font();
-        for word in self.body.lex() {
-            if y < -self.sy + 10.0 || y > self.height - 20.0 {
-                break; // Stop drawing if we exceed the height
-            }
-            if let Ok(f) = word.is_instance() {
-                if font != f {
-                    self.pt = f.size;
-                    font_kit_font = f.to_font();
-                    font = f;
-                }
-            } else {
-                match word {
-                    Token::Text(text) => {
-                        // Implement word wrapping to the right, and center.
-                        // Add super and subscript support.
-                        // Re-implement the hythonated words for character wrapping and add soft hyphenation.
-                        // Add "Preformatted text. Add support for the <pre> tag. Unlike normal paragraphs, text inside <pre> tags doesn’t automatically break lines, and whitespace like spaces and newlines are preserved. Use a fixed-width font like Courier New or SFMono as well. Make sure tags work normally inside <pre> tags: it should be possible to bold some text inside a <pre>. The results will look best if you also do"
-
-                        /*
-                        match font.align.as_str() {
-                            "center" => {
-                                x = (self.width - text_pixel_width(&font_kit_font, &text, self.pt))
-                                    / 2.0;
-                            }
-                            "right" => {
-                                x = self.width
-                                    - text_pixel_width(&font_kit_font, &text, self.pt)
-                                    - 10.0;
-                            }
-                            _ => {
-                                x = -self.sx + 10.0; // Default to left alignment
-                            }
-                        }
-                        */
-                        for word in text.split(" ") {
-                            let mut word = word.to_string(); // Add a space to the end of the word for spacing
-                            if word.contains("\n") {
-                                y += self.pt as f32 * 1.1;
-                                x = -self.sx + 10.0;
-                            }
-                            word.push(' ');
-                            let word = &word;
-
-                            if x + text_pixel_width(&font_kit_font, word, self.pt)
-                                > self.width - 30.0
-                            {
-                                y += self.pt as f32 * 1.1;
-                                x = -self.sx + 10.0;
-                            }
-
-                            points.append(&mut str_to_points(x, y, &font_kit_font, word, self.pt));
-                            glyphs.append(&mut str_to_glyphs(&font_kit_font, word));
-                            x += text_pixel_width(&font_kit_font, word, self.pt);
-                        }
-                    }
-                    Token::Tag(_) => continue,
-                }
-            }
-            self.dt.draw_glyphs(
-                &font_kit_font,
-                self.pt,
-                &glyphs,
-                &points,
-                &Source::Solid(SolidSource {
-                    r: 0,
-                    g: 0,
-                    b: 0,
-                    a: 0xff,
-                }),
-                &DrawOptions::new(),
-            );
-
-            points.clear();
-            glyphs.clear();
-        }
+        self.draw_text();
     }
 }
 
-fn str_to_points(mut x: f32, y: f32, font: &Font, text: &str, size: f32) -> Vec<Point> {
-    text.chars()
-        .map(|c| {
-            x += get_font_step(font, c, size);
-
-            Point::new(x, y)
-        }) // Placeholder conversion
-        .collect()
-}
-fn str_to_glyphs(font: &Font, text: &str) -> Vec<u32> {
-    text.chars().map(|c| get_glyph_id(font, c)).collect()
-}
-fn get_glyph_id(font: &Font, char: char) -> u32 {
-    font.glyph_for_char(char)
-        .unwrap_or(font.glyph_for_char(' ').unwrap())
-}
-fn get_font_step(font: &Font, char: char, size: f32) -> f32 {
+fn text_pixel_dimensions(font: &Font, text: &str, size: f32) -> (f32, f32) {
     let units_per_em = font.metrics().units_per_em as f32;
-    let glyph_id = font
-        .glyph_for_char(char)
-        .unwrap_or(font.glyph_for_char(' ').unwrap());
-    let advance = font.advance(glyph_id).unwrap_or_default().x() as f32;
-    advance * size / units_per_em
-}
+    let metrics = font.metrics();
 
-fn text_pixel_width(font: &Font, text: &str, size: f32) -> f32 {
-    let units_per_em = font.metrics().units_per_em as f32;
-    text.chars()
+    // Calculate proper text height from font metrics
+    let line_height = (metrics.ascent - metrics.descent) as f32 * size / units_per_em;
+
+    let width = text
+        .chars()
         .map(|c| {
             let glyph_id = font
                 .glyph_for_char(c)
@@ -183,29 +254,7 @@ fn text_pixel_width(font: &Font, text: &str, size: f32) -> f32 {
             let advance = font.advance(glyph_id).unwrap_or_default().x() as f32;
             advance * size / units_per_em
         })
-        .sum()
-}
+        .sum();
 
-fn count_spaces_to_width(font: &Font, text: &str, width: f32, size: f32) -> usize {
-    let units_per_em = font.metrics().units_per_em as f32;
-    let mut total_width = 0.0;
-    let mut char_count = 1;
-
-    for c in text.chars() {
-        let glyph_id = font
-            .glyph_for_char(c)
-            .unwrap_or(font.glyph_for_char(' ').unwrap());
-        let advance = font.advance(glyph_id).unwrap_or_default().x() as f32;
-        total_width += advance * size / units_per_em;
-        if total_width >= width {
-            break;
-        }
-        if c == ' ' {
-            // Count spaces as well
-            char_count += 1;
-            continue;
-        }
-    }
-
-    char_count
+    (width, line_height)
 }

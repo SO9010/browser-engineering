@@ -3,13 +3,12 @@ use super::LayoutFont;
 #[derive(Debug, Clone)]
 pub struct Body {
     text: String,
-    tokens: Vec<Token>,
+    tokens: Vec<TokenAction>,
 }
 
 impl Body {
     pub fn new(text: String) -> Self {
         let tokens = lex(&text);
-        show(&text);
         Self { text, tokens }
     }
 
@@ -17,12 +16,8 @@ impl Body {
         &self.text
     }
 
-    pub fn tokens(&self) -> &[Token] {
-        &self.tokens
-    }
-
-    pub fn lex(&self) -> Vec<Token> {
-        lex(&self.text)
+    pub fn tokens(&self) -> Vec<TokenAction> {
+        self.tokens.clone()
     }
 
     // This shows the html body without tags
@@ -49,12 +44,11 @@ impl Body {
     }
 }
 
-fn lex(text: &String) -> Vec<Token> {
-    let mut out = Vec::new();
+fn lex(text: &String) -> Vec<TokenAction> {
     let mut buffer = String::new();
     let mut in_tag = false;
+    let mut tag = String::new();
 
-    // Make an owned String and apply replacements
     let mut text = text.clone();
     text = text.replace("&lt;", "<");
     text = text.replace("&gt;", ">");
@@ -62,32 +56,77 @@ fn lex(text: &String) -> Vec<Token> {
     text = text.replace("&quot;", "\"");
     text = text.replace("\t", "    ");
 
+    let mut lexed: Vec<TokenAction> = Vec::new();
+    let mut font = LayoutFont::default();
+
     for c in text.chars() {
         if c == '<' {
             if !buffer.is_empty() && !in_tag {
-                out.push(Token::Text(buffer.clone()));
+                // Emit text before the tag
+                lexed.push(TokenAction::Text(StyledText {
+                    text: buffer.clone(),
+                    font: font.clone(),
+                }));
                 buffer.clear();
             }
             in_tag = true;
+            tag.clear();
         } else if c == '>' {
-            if in_tag {
-                out.push(Token::Tag(buffer.clone()));
-                buffer.clear();
-            }
             in_tag = false;
+            // Process the tag
+            match tag.to_lowercase().as_str() {
+                "/p" | "newline" => lexed.push(TokenAction::Newline),
+                "i" => {
+                    font = LayoutFont::default();
+                    font.properties.style = font_kit::properties::Style::Italic;
+                }
+                "/i" => {
+                    font = LayoutFont::default();
+                    font.properties.style = font_kit::properties::Style::Normal;
+                }
+                "b" => {
+                    font = LayoutFont::default();
+                    font.properties.weight = font_kit::properties::Weight::BOLD;
+                }
+                "/b" => {
+                    font = LayoutFont::default();
+                    font.properties.weight = font_kit::properties::Weight::NORMAL;
+                }
+                "big" => {
+                    font = LayoutFont::default();
+                    font.size *= 1.2;
+                }
+                "/big" => {
+                    font = LayoutFont::default();
+                    font.size = font.original_size;
+                }
+                "small" => {
+                    font = LayoutFont::default();
+                    font.size /= 1.2;
+                }
+                "/small" => {
+                    font = LayoutFont::default();
+                    font.size = font.original_size;
+                }
+                _ => {}
+            }
+            tag.clear();
+        } else if in_tag {
+            tag.push(c);
         } else {
             buffer.push(c);
         }
     }
-    if !in_tag && !buffer.is_empty() {
-        out.push(Token::Text(buffer));
+    // Emit any remaining text
+    if !buffer.is_empty() {
+        lexed.push(TokenAction::Text(StyledText { text: buffer, font }));
     }
-    out
+    lexed
 }
 
 pub fn show(text: &String) {
     let mut in_tag = false;
-    let mut b = "\n".to_string();
+    let mut b = String::new();
     for c in text.chars() {
         if c == '<' {
             in_tag = true;
@@ -113,6 +152,18 @@ pub enum Token {
     Tag(String),
 }
 
+#[derive(Debug, Clone)]
+pub enum TokenAction {
+    Newline,
+    Text(StyledText),
+}
+
+#[derive(Debug, Clone)]
+pub struct StyledText {
+    pub text: String,
+    pub font: LayoutFont,
+}
+
 impl Token {
     pub fn is_text(&self) -> bool {
         matches!(self, Token::Text(_))
@@ -120,58 +171,5 @@ impl Token {
 
     pub fn is_tag(&self) -> bool {
         matches!(self, Token::Tag(_))
-    }
-
-    pub fn is_instance(&self) -> Result<LayoutFont, String> {
-        let mut font: LayoutFont = LayoutFont {
-            family: font_kit::family_name::FamilyName::Title("FiraCode Nerd Font".into()),
-            size: 16.0,
-            original_size: 16.0,
-            properties: font_kit::properties::Properties {
-                style: font_kit::properties::Style::Normal,
-                weight: font_kit::properties::Weight::MEDIUM,
-                stretch: font_kit::properties::Stretch::NORMAL,
-            },
-            align: "left".to_string(),
-        };
-        match self {
-            Token::Text(s) => Err(s.clone()),
-            Token::Tag(t) => match t.to_lowercase().as_str() {
-                "i" => {
-                    font.properties.style = font_kit::properties::Style::Italic;
-                    Ok(font)
-                }
-                "/i" => {
-                    font.properties.style = font_kit::properties::Style::Normal;
-                    Ok(font)
-                }
-                "b" => {
-                    font.properties.weight = font_kit::properties::Weight::BOLD;
-                    Ok(font)
-                }
-                "/u" => {
-                    font.properties.weight = font_kit::properties::Weight::NORMAL;
-                    Ok(font)
-                }
-                "big" => {
-                    font.size *= 1.2;
-                    Ok(font)
-                }
-                "/big" => {
-                    font.size = font.original_size;
-                    Ok(font)
-                }
-                "small" => {
-                    font.size /= 1.2;
-                    Ok(font)
-                }
-                "/small" => {
-                    font.size = font.original_size;
-                    Ok(font)
-                }
-
-                _ => Err(t.clone()),
-            },
-        }
     }
 }

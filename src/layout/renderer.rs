@@ -1,18 +1,11 @@
-use std::{
-    char,
-    collections::{HashMap, HashSet},
-    fmt::{Debug, Display},
-};
+use std::collections::HashMap;
 
 use font_kit::font::Font;
 use raqote::*;
 
 use crate::layout::text::{StyledText, TokenAction};
 
-use super::{
-    LayoutFont,
-    text::{Body, Token},
-};
+use super::{LayoutFont, text::Body};
 
 /// A context that can draw vector Text
 pub struct Layout {
@@ -60,7 +53,7 @@ impl Layout {
             pt: 16.0,
         };
         s.lines();
-        return s;
+        s
     }
 
     pub fn update_window_scale(&mut self, width: f32, height: f32) {
@@ -98,7 +91,7 @@ impl Layout {
 
         let mut font: LayoutFont = LayoutFont::default();
         let mut text: String = String::new();
-        for (i, token) in self.body.tokens().iter().enumerate() {
+        for token in self.body.tokens().iter() {
             let mut text_width = 0.0;
             // Don't need to process if its out of sight... Out of sight out of mind.
             // We can get the line height and then calculate when its out of sight...
@@ -108,7 +101,6 @@ impl Layout {
                     if !collected_text.is_empty() {
                         self.lines.push((collected_text.clone(), text_width));
                         collected_text.clear();
-                        text_width = 0.0;
                     }
                     // Add an actual newline token to start the next line
                     self.lines.push((Vec::new(), 0.0));
@@ -118,7 +110,7 @@ impl Layout {
                     let f = &self.get_font(&font);
                     text_width += text_pixel_dimensions(f, &styled_text.text, self.pt).0;
                     for word in styled_text.text.split(" ") {
-                        let word_width = text_pixel_dimensions(f, &word, self.pt).0;
+                        let word_width = text_pixel_dimensions(f, word, self.pt).0;
 
                         if word.contains('\n') {
                             self.lines.push((collected_text.clone(), text_width));
@@ -136,7 +128,7 @@ impl Layout {
 
                         x += word_width;
 
-                        text.push_str(&word);
+                        text.push_str(word);
                         collected_text.push(TokenAction::Text(StyledText {
                             text: text.clone(),
                             font: font.clone(),
@@ -243,7 +235,7 @@ fn text_pixel_dimensions(font: &Font, text: &str, size: f32) -> (f32, f32) {
     let metrics = font.metrics();
 
     // Calculate proper text height from font metrics
-    let line_height = (metrics.ascent - metrics.descent) as f32 * size / units_per_em;
+    let line_height = (metrics.ascent - metrics.descent) * size / units_per_em;
 
     let width = text
         .chars()
@@ -251,7 +243,7 @@ fn text_pixel_dimensions(font: &Font, text: &str, size: f32) -> (f32, f32) {
             let glyph_id = font
                 .glyph_for_char(c)
                 .unwrap_or(font.glyph_for_char(' ').unwrap());
-            let advance = font.advance(glyph_id).unwrap_or_default().x() as f32;
+            let advance = font.advance(glyph_id).unwrap_or_default().x();
             advance * size / units_per_em
         })
         .sum();

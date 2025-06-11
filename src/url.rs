@@ -22,7 +22,7 @@ use rustls::RootCertStore;
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
-    layout::text::{Body, show},
+    layout::text::Body,
     renderer::init_renderer,
 };
 
@@ -39,7 +39,7 @@ pub fn load(url: &str) -> Result<(), String> {
         && limit > 0
     {
         match response.get_response_code() {
-            Some(code) if code >= 300 && code < 400 => {
+            Some(code) if (300..400).contains(&code) => {
                 let redirect_url = response
                     .headers
                     .get("Location")
@@ -141,8 +141,8 @@ impl URL {
             }
         }
         let response_str = String::from_utf8_lossy(&response).to_string();
-        Ok(Response::from_string(&response_str)
-            .map_err(|e| format!("Failed to parse response: {}", e))?)
+        Response::from_string(&response_str)
+            .map_err(|e| format!("Failed to parse response: {}", e))
     }
 
     fn request_https(&self) -> Result<Response, String> {
@@ -177,8 +177,8 @@ impl URL {
         tls.read_to_end(&mut plaintext).unwrap();
 
         let response_str = String::from_utf8_lossy(&plaintext).to_string();
-        Ok(Response::from_string(&response_str)
-            .map_err(|e| format!("Failed to parse response: {}", e))?)
+        Response::from_string(&response_str)
+            .map_err(|e| format!("Failed to parse response: {}", e))
     }
 
     fn request_file(&self) -> Result<Response, String> {
@@ -240,7 +240,7 @@ impl URL {
             scheme: scheme.clone(),
             host: host.to_string(),
             path: path.to_string(),
-            port: port.clone(),
+            port,
             method: method.clone(),
             queries: queries.clone(),
             headers: headers.clone(),
@@ -285,7 +285,7 @@ impl URL {
             let scheme = url
                 .split("://")
                 .next()
-                .and_then(|scheme| Scheme::from_str(scheme))
+                .and_then(Scheme::from_str)
                 .ok_or_else(|| "Unsupported URL scheme".to_string())?;
             let host = url
                 .split("://")
@@ -296,7 +296,7 @@ impl URL {
             let mut path = url
                 .split("://")
                 .nth(1)
-                .and_then(|rest| rest.splitn(2, '/').nth(1))
+                .and_then(|rest| rest.split_once('/').map(|x| x.1))
                 .unwrap_or("/")
                 .split('?')
                 .next()
@@ -320,7 +320,7 @@ impl URL {
                         })
                         .collect::<HashMap<String, String>>()
                 })
-                .unwrap_or_else(HashMap::new);
+                .unwrap_or_default();
             let port = if let Some(port_str) = host.split(':').nth(1) {
                 port_str
                     .parse::<u16>()
@@ -412,12 +412,12 @@ impl Response {
     }
 
     pub fn get_response_code(&self) -> Option<u16> {
-        let status = self
+        
+        self
             .status
             .split(" ")
             .nth(1)
-            .and_then(|code| code.parse::<u16>().ok());
-        return status;
+            .and_then(|code| code.parse::<u16>().ok())
     }
 }
 

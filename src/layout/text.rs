@@ -19,29 +19,6 @@ impl Body {
     pub fn tokens(&self) -> Vec<TokenAction> {
         self.tokens.clone()
     }
-
-    // This shows the html body without tags
-    fn show(&self) {
-        let mut in_tag = false;
-        let mut b = "\n".to_string();
-        for c in self.text.chars() {
-            if c == '<' {
-                in_tag = true;
-            } else if c == '>' {
-                in_tag = false;
-            } else if !in_tag {
-                b.push(c);
-            }
-        }
-
-        b = b.replace("&lt;", "<");
-        b = b.replace("&gt;", ">");
-        b = b.replace("&amp;", "&");
-        b = b.replace("&quot;", "\"");
-        b = b.replace("\t", "    ");
-
-        println!("{}", b);
-    }
 }
 
 fn lex(text: &String) -> Vec<TokenAction> {

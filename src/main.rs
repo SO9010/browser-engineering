@@ -1,3 +1,4 @@
+pub mod html;
 pub mod layout;
 pub mod renderer;
 pub mod url;

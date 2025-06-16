@@ -1,4 +1,19 @@
 use super::LayoutFont;
+use std::rc::Rc;
+
+#[derive(Debug, Clone)]
+pub enum NodeType {
+    Element { tag: String },
+    Text { text: String },
+}
+#[derive(Debug, Clone)]
+pub struct Node {
+    pub children: Vec<usize>,
+    pub node_type: NodeType,
+    pub parent: Option<usize>, // Index in the vec.
+}
+
+/// Hmm gotta understand linked lists in rust properly...
 
 #[derive(Debug, Clone)]
 pub struct Body {
